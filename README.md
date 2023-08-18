@@ -1,6 +1,10 @@
 # lightmicroscope_neuron_skeletonization
  Automated processing of light microscope image stacks (.tif) using ImageJ, 3D skeletonization of processed stack, and efficient GUIs for neuron branching analysis. Saves results as excel file.
 
+ Alterations to pipeline:
+ - 'processing_from_csvs.py' = lets user run GUIs and branching analysis from a csv file describing the x,y,z positions of every point in a point cloud of the neuron
+ - 'run_branching_swc.py' = UNFINISHED. ideally, will let the user save their neuron branching structure as a swc file that can then be analyzed using other software 
+
 ### GUI Features:
 #### pre-branching
 - removing noise clutter
