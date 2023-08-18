@@ -6,12 +6,14 @@ from skimage import exposure
 import xarray
 from tqdm import tqdm
 import logging
+import math
     
 def ImageJ_processing(folderpath: str,
                         threshold1: dict, 
                         threshold2: dict, 
                         threshold3: dict,
-                        num_slices_to_remove: int):
+                        num_slices_to_remove: int,
+                        batchsize: int = 5):
     '''
     Preprocesses images using ImageJ and applies various thresholding methods and filters.
     
@@ -30,6 +32,9 @@ def ImageJ_processing(folderpath: str,
     num_slices_to_remove : int
         Number of slices to remove from the start of each image array. 
         These are usually faulty images that we don't want to include
+    batchsize : int
+        ImageJ takes a lot of memory. How many files to run before re-initalizing ImageJ
+        to save memory (this is a stupid fix)
 
     Returns
     -------
@@ -108,9 +113,12 @@ def ImageJ_processing(folderpath: str,
         Threshold1, Threshold2, Threshold3 dictionaries are not explicitly passed but are defined in the parent function
         '''
         
+        
         #opening .tif image as a np array
         arr = io.imread(filepath) #[num_slices_to_remove+1:,:,:]
         if len(arr) > 150:
+            #print(f"{int(len(arr)/6)} slices removed")
+            #arr = arr[int(len(arr)/7):,:,:]
             arr = arr[40:, :, :]
         else:
             arr = arr[num_slices_to_remove+1:,:,:]
@@ -170,7 +178,9 @@ def ImageJ_processing(folderpath: str,
         ij.IJ.saveAs(result, "Tiff", f"{savepath}_thresh3.tif")
         imp.close()
         logging.info(f'Done thresholding method 3')
+        
         del x_array
+        # ij.IJ.run("Dispose All Windows", "/all image")
 
     #all files are processed iteratively
     with tqdm(total=numfiles, desc='Processing Images', unit='img') as pbar:
@@ -197,3 +207,37 @@ def ImageJ_processing(folderpath: str,
             
     ij.context().dispose() #Close ImageJ instance
     return savefolder
+
+
+    # num_batches = math.ceil(numfiles / batchsize)
+#         for batch in range(num_batches):
+#             start = batch * batchsize + 47
+#             end = min((batch + 1) * batchsize, numfiles) + 47
+#             print(f'Starting batch {batch + 1} of {num_batches}, processing files {start + 1} to {end}')
+
+#             for i in range(start, end):
+#                 filepath = files[i]
+#                 filename = filenames[i]
+#                 pbar.set_description(f'Image {i+1}/{numfiles}')
+                
+#                 #COULD ADD QUICK CHECK FOR IF IT HAS THREE DIMS HERE (to continue)
+#                 try:
+#                     arr = io.imread(filepath)[num_slices_to_remove+1:,:,:]
+#                     if arr.shape[0] < 100:
+#                         del arr
+#                         process_image(i, filepath, filename, ij)
+#                     else:
+#                         logging.info(f"File {filename} is probably an invalid file -- too many slices")
+#                 except IndexError:
+#                     logging.info(f"File {filename} is an invalid file")
+                
+#                 # Close all opened tabs to lighten memory (even if you can't see them)
+#                 ij.WindowManager.setTempCurrentImage(None)
+#                 ij.IJ.run("Close All")
+                
+#                 pbar.update(1)
+            
+#             #Dispose of ImageJ instance to clear up memory
+#             ij.getContext().dispose()
+#             # ij.context().dispose()
+# # ij = imagej.init('...', new_instance=True)

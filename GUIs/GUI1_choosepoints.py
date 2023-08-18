@@ -47,8 +47,8 @@ class GUI1Plot(FigureCanvas):
         #intialize widgets and other stuff
         self.remove_coords_widget, self.root_coords_widget, self.start_coords_widget, self.end_coords_widget = remove_coords_widget, root_coords_widget, start_coords_widget, end_coords_widget
         self.bomb_label, self.scale_label, self.threshold_label = bomb_label, scale_label, threshold_label
-        self.scaling = np.array((1,1,1))
-        self.thresholds = np.array((1,1))
+        self.scaling = np.array((0.065,0.065,0.25))
+        self.thresholds = np.array((0.1,2))
         self.current_radius = 5
         self.ax.mouse_init() #connect mouse
         self.current_button = None #store the last clicked choice button
@@ -64,6 +64,7 @@ class GUI1Plot(FigureCanvas):
             Array of 3D coordinates to plot.
         """
         self.data = data
+        self.prev_data = data
         self.scatter_plot = self.ax.scatter(data[:, 0], data[:, 1], data[:, 2], picker=5)  # 5 points tolerance
 
     def set_scale(self, x_scale, y_scale, z_scale):
@@ -224,10 +225,12 @@ class GUI1Plot(FigureCanvas):
                     if tuple(point) not in self.remove_coords:
                         self.remove_coords.append(tuple(point))
                         self.remove_coords_widget.addItem(str(np.array(point)))
+                self.prev_data = self.data #for if undo button is clicked
                 self.data = np.array([point for point in self.data if list(point) not in nearby_points])
                 self.scatter_plot._offsets3d = (self.data[:, 0], self.data[:, 1], self.data[:, 2])
                 self.draw()
             elif self.current_button == 1: #remove single point
+                self.prev_data = self.data
                 self.data = np.delete(self.data, ind, axis=0)
                 self.scatter_plot._offsets3d = (self.data[:, 0], self.data[:, 1], self.data[:, 2])
                 self.draw()
@@ -243,6 +246,7 @@ class GUI1Plot(FigureCanvas):
                     coords1 = self.draw_points_list[0]
                     coords2 = self.draw_points_list[1]
                     linepoints = self.generate_line(coords1, coords2, 1)
+                    self.prev_data = self.data
                     self.data = np.concatenate((self.data, linepoints), axis=0)
                     self.data = np.unique(self.data, axis=0)
                     self.scatter_plot._offsets3d = (self.data[:, 0], self.data[:, 1], self.data[:, 2])
@@ -264,8 +268,14 @@ class GUI1Plot(FigureCanvas):
                     self.end_coords_widget.addItem(str(coords))
                 self.ax.scatter(*coords, color=color, s=100) # Add a larger  point at the picked location
                 self.draw()
-                
+    
+    def undo(self):
+        self.data = self.prev_data
+        self.scatter_plot._offsets3d = (self.data[:, 0], self.data[:, 1], self.data[:, 2])
+        self.draw()
+         
     def save_results(self):
+        #NOTE: Right now only the first item of root_coords, start_coords, end_coords are being saved and returned. This is not a problem for our purpose but the code could be improved.
         """
         Save the current state of the 3D plot.
 
@@ -310,33 +320,14 @@ class GUI1ApplicationWindow(QMainWindow):
         labelsizePolicy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
         #create variables to store thresholds
-        self.threshold_label = QLabel("Set length and node threshold for branches (default = 1, 1")
+        self.threshold_label = QLabel("Set length and node threshold for branches (default = 0.1, 2")
         self.length_threshold = QLineEdit(self)
         self.node_threshold = QLineEdit(self)
         self.set_threshold_button = QPushButton("Set")
-        self.cur_threshold_label = QLabel("Current thresholds: [1. 1.]")
+        self.cur_threshold_label = QLabel("Current thresholds: [0.1 2.]")
         self.cur_threshold_label.setSizePolicy(labelsizePolicy)
         self.set_threshold_button.clicked.connect(lambda: self.plot_widget.set_threshold(self.length_threshold, self.node_threshold))
-
-        #create widgets to handle 'bomb' effect
-        self.radius_input = QLineEdit()  # Let the user input a radius
-        self.set_radius_button = QPushButton("Set Bomb Radius")
-        self.set_radius_button.clicked.connect(lambda: self.plot_widget.set_radius(self.radius_input))
-        self.bomb_button = QPushButton('BOMB DESTROY')
-        self.bomb_label = QLabel("Current Radius: 5")
-        self.bomb_label.setSizePolicy(labelsizePolicy)
-        self.reset_scale_button = QPushButton('Reset Scale')
-
-        #create widgets to allow for settable scaling
-        self.scaling_label = QLabel("Set scaling below \n order: x,y,z\nenter all 3")
-        self.x_scale = QLineEdit()
-        self.y_scale = QLineEdit()
-        self.z_scale = QLineEdit()
-        self.set_scale_button = QPushButton("Set")
-        self.scale_label = QLabel("Current Scale: [1. 1. 1.]")
-        self.scale_label.setSizePolicy(labelsizePolicy)
-        self.set_scale_button.clicked.connect(lambda: self.plot_widget.set_scale(self.x_scale, self.y_scale, self.z_scale))
-
+        
         #create QListWidgets for the removed coords, root coords, start coords, end coords and corresponding labels
         self.remove_coords_widget = QListWidget()
         self.root_coords_widget = QListWidget()
@@ -346,6 +337,26 @@ class GUI1ApplicationWindow(QMainWindow):
         self.root_coords_label = QLabel("Root point (one only)")
         self.start_coords_label = QLabel("Start point (one only")
         self.end_coords_label = QLabel("End point (one only")
+        
+        #create widgets to allow for settable scaling
+        self.scaling_label = QLabel("Set scaling below \n order: x,y,z\nenter all 3")
+        self.x_scale = QLineEdit()
+        self.y_scale = QLineEdit()
+        self.z_scale = QLineEdit()
+        self.set_scale_button = QPushButton("Set")
+        self.scale_label = QLabel("Current Scale: [0.65 0.65 0.25]")
+        self.scale_label.setSizePolicy(labelsizePolicy)
+        self.set_scale_button.clicked.connect(lambda: self.plot_widget.set_scale(self.x_scale, self.y_scale, self.z_scale))
+        
+        #create widgets to handle 'bomb' effect
+        self.radius_input = QLineEdit()  # Let the user input a radius
+        self.set_radius_button = QPushButton("Set Bomb Radius")
+        self.set_radius_button.clicked.connect(lambda: self.plot_widget.set_radius(self.radius_input))
+        self.bomb_button = QPushButton('BOMB DESTROY')
+        self.bomb_label = QLabel("Current Radius: 5")
+        self.bomb_label.setSizePolicy(labelsizePolicy)
+        self.reset_scale_button = QPushButton('Reset Scale')
+        self.undo_button = QPushButton("Undo Last Change")
         
         #create 3D plot and toolbar, as well as filename widget
         self.plot_widget = GUI1Plot(self.remove_coords_widget, self.root_coords_widget, self.start_coords_widget, self.end_coords_widget, self.scale_label, self.bomb_label, self.cur_threshold_label)
@@ -362,9 +373,10 @@ class GUI1ApplicationWindow(QMainWindow):
         self.green_button.clicked.connect(self.plot_widget.select_green)
         self.blue_button.clicked.connect(self.plot_widget.select_blue)
         self.purple_button.clicked.connect(self.plot_widget.select_purple)
+        self.draw_points_button.clicked.connect(self.plot_widget.select_draw_points)
         self.bomb_button.clicked.connect(self.plot_widget.select_bomb)
         self.reset_scale_button.clicked.connect(self.plot_widget.reset_scale)
-        self.draw_points_button.clicked.connect(self.plot_widget.select_draw_points)
+        self.undo_button.clicked.connect(self.plot_widget.undo)
 
         #create three buttons to close the GUI
         self.done_button = QPushButton("Done")
@@ -402,6 +414,7 @@ class GUI1ApplicationWindow(QMainWindow):
         vbox2.addLayout(vbox21)
         vbox2.addLayout(vbox22)
         vbox2.addWidget(self.reset_scale_button)
+        vbox2.addWidget(self.undo_button)
         vbox2.setSpacing(60)
 
         #vertical layout with removed points label + coords list, both threshold boxes, and ugly button
@@ -550,9 +563,38 @@ class GUI1ApplicationWindow(QMainWindow):
         self.results_ready.emit(self.results)  # Emit the signal with the results
         self.close()
             
+from scipy.spatial import cKDTree
+import numpy as np
+
+def remove_duplicates(datafile, tol=0.1):
+    '''
+    Removes duplicates from a numpy array of 3D points.
+    
+    Parameters
+    ----------
+    datafile : np.ndarray
+        2D array with coordinates of all points.
+    tol : float
+        The tolerance for considering points as duplicates.
+
+    Returns
+    -------
+    datafile : np.ndarray
+        2D array with coordinates of all points with duplicates removed.
+    '''
+    tree = cKDTree(datafile)
+    pairs = tree.query_pairs(tol)
+    keep = np.ones((datafile.shape[0],), dtype=bool)
+
+    for i, j in pairs:
+        if keep[i] and keep[j]:
+            keep[j] = False
+
+    return datafile[keep]
 
 
-def GUI1(filepath: str, filename: str):
+
+def GUI1(filepath: str, filename: str, branching_parameters, existing_coords : None):
     """
     Start the GUI1 application.
 
@@ -567,18 +609,25 @@ def GUI1(filepath: str, filename: str):
     Returns
     -------
     dict
-        The results obtained from the GUI1 application. If the application is closed without saving the results, the 
-        dictionary will only contain the 'continue' key set to False.
+        The results obtained from the GUI1 application. If 'reset','next','back' are pressed the 
+        dictionary will contain the 'continue' key set to False.
     """
-    
-    datafile = np.load(filepath)
+    if existing_coords is not None:
+        all_coords = existing_coords
+        print("LOADING EXISTING COORDS")
+    else:
+        datafile = np.load(filepath)
+        print("OG COORDS SHAPE: ", datafile.shape)
+        all_coords = remove_duplicates(datafile, branching_parameters['remove_overlap']) 
+        print("NEW COORDS SHAPE: ", all_coords.shape)
+        
 
     app = QApplication.instance()  # checks if QApplication already exists
     if not app:  # create QApplication if it doesnt exist 
         app = QApplication(sys.argv)
         
     window = GUI1ApplicationWindow()
-    window.plotting_data(datafile)
+    window.plotting_data(all_coords) #
     window.setting_filename(filename)
 
     window.show()

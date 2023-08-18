@@ -3,13 +3,58 @@ from scipy.spatial import KDTree
 import networkx as nx
 from networkx.algorithms import minimum_spanning_tree
 from skimage import io
+import cv2 as cv
 import pandas as pd
+import json
+import os
 import logging
 from GUIs.Useful_functions import coords_to_id, find_parent, find_length
 
 def make_tree(coords : np.ndarray, 
-              root_coords: list,
-              branching_parameters : dict) -> dict:
+              root_coords: list) -> dict:
+    '''
+    Builds a k-d tree for efficient nearest neighbour search, finds the k-nearest neighbours for each point and creates
+    a graph with weighted edges between each point and its neighbours. finally, computes the minimum spanning tree using 
+    those weighted edges
+    
+    Parameters
+    ----------
+    coords : np.ndarray
+        3d array with coordinates of all points in the skeleton
+    root_coords : np.ndarray
+        array of x,y,z coordinates of root node to generate tree from
+        
+    Returns
+    -------
+    tree : dict
+        returns a dictionary with every key (parent node) connected to its values (children)
+
+    '''
+    # tree = KDTree(coords, copy_data=True)
+    # k = 3 #the number of nearest neighbors (k) to consider
+    # distances, indices = tree.query(coords, k=k+1)  #query neighbours, k+1 because the point itself is included as a neighbor
+
+    # G = nx.Graph()
+    # for i in range(len(coords)):
+    #     for j in range(1, k+1):  # Skip the first neighbor, which is the point itself
+    #         G.add_edge(i, indices[i, j], weight=distances[i, j])
+            
+    # mst = minimum_spanning_tree(G)
+    # tree = {}
+    # visited = set()
+
+    # def dfs(node):
+    #     visited.add(node)
+    #     neighbors = [n for n in mst.neighbors(node) if n not in visited]
+    #     tree[tuple(coords[node])] = [tuple(coords[child]) for child in neighbors]
+    #     for child in neighbors:
+    #         dfs(child)
+
+    # root = np.where((coords == root_coords).all(axis=1))[0][0]
+    # dfs(root)
+    # return tree
+
+    #IMPROVED (hopefully)
     '''
     Builds a k-d tree for efficient nearest neighbour search, finds the k-nearest neighbours for each point and creates
     a graph with weighted edges between each point and its neighbours. Then computes the minimum spanning tree using 
@@ -22,40 +67,40 @@ def make_tree(coords : np.ndarray,
         3d array with coordinates of all points in the skeleton
     root_coords : np.ndarray
         array of x,y,z coordinates of root node to generate tree from
-    branching_parameters : dict
-        dictionary of thresholds for branching used below
         
     Returns
     -------
     tree : dict
         returns a dictionary with every key (parent node) connected to its values (children)
-    '''
 
+    '''
     tree = KDTree(coords, copy_data=True)
-    k = branching_parameters['num_nearestneighbours'] # The number of nearest neighbors (k) to consider
-    distances, indices = tree.query(coords, k=k+1)  # Query neighbours (k+1 because the point itself is included as a neighbor)
+    k = 3 # the number of nearest neighbors (k) to consider
+    distances, indices = tree.query(coords, k=k+1)  # query neighbours, k+1 because the point itself is included as a neighbor
 
     G = nx.Graph()
     for i in range(len(coords)):
         for j in range(1, k+1):  # Skip the first neighbor, which is the point itself
-            G.add_edge(i, indices[i, j], weight=distances[i, j]) #Add weighted edge between neighbours
+            G.add_edge(i, indices[i, j], weight=distances[i, j])
             
-    mst = minimum_spanning_tree(G) #Construct minimum spanning tree from weights
-    
-    #Check if the minimum spanning tree is fully connected
+    mst = minimum_spanning_tree(G)
             
-    dist_threshold = branching_parameters['max_unconnected_distance']
-    size_threshold = branching_parameters['min_unconnected_nodes']
+    dist_threshold = 50
+    size_threshold = 5
     
+    # Check if the minimum spanning tree is fully connected
     if not nx.is_connected(mst):
+        print("NOT CONNECTED")
+        # If not, find and connect the disconnected components
         components = list(nx.connected_components(mst))
-        logging.info(f"Tree is not connected. Attempting correct connection of {len(components)} tree components")
         root_index = np.where((coords == root_coords).all(axis=1))[0][0]
         main_component = [c for c in components if root_index in c][0]
         other_components = [c for c in components if c != main_component]
-        for component in other_components: 
-            if len(component) > size_threshold: # Check size threshold
-                min_distance = np.inf # Initialize minimum distance with infinity
+        for component in other_components: # copy list to allow modifications during iteration
+            # Check size threshold
+            if len(component) > size_threshold:
+                # Initialize minimum distance with infinity
+                min_distance = np.inf
                 for node1 in main_component:
                     for node2 in component:
                         distance = np.linalg.norm(coords[node1] - coords[node2])
@@ -66,11 +111,31 @@ def make_tree(coords : np.ndarray,
                 if min_distance <= dist_threshold:
                     # Add an edge between the pair of nodes with the smallest distance
                     mst.add_edge(min_pair[0], min_pair[1], weight=min_distance)
-                    logging.info("Connected component")
+
+                
+    # # Check if the minimum spanning tree is fully connected. If not, find and connect the disconnected components
+    # if not nx.is_connected(mst):
+    #     print("WUZ NOT CONNECTED")
+    #     components = list(nx.connected_components(mst))
+    #     main_component = [c for c in components if root_coords in c][0]
+    #     other_components = [c for c in components if c != main_component]
+        
+    #     for component in other_components:
+    #         if len(component) > size_threshold:
+    #             min_distance = np.inf
+    #             for node1 in main_component:
+    #                 for node2 in component:
+    #                     distance = np.linalg.norm(coords[node1] - coords[node2])
+    #                     if distance < min_distance:
+    #                         min_distance = distance
+    #                         min_pair = (node1, node2)
+                
+    #             if min_distance < dist_threshold:
+    #                 mst.add_edge(min_pair[0], min_pair[1], weight=min_distance)
+
     tree = {}
     visited = set()
 
-    
     def dfs(node):
         visited.add(node)
         neighbors = [n for n in mst.neighbors(node) if n not in visited]
@@ -331,8 +396,10 @@ def make_branches_df(nodes_df: pd.DataFrame,
     #return final data table    
     return branches
 
+
+
 def Run_branching(results: dict, 
-                  branching_parameters : dict) -> dict: # -> tuple[pd.DataFrame, pd.DataFrame]:
+                  filepath: str): # -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Runs the branching analysis pipeline on a set of 3D coordinates. 
     
@@ -344,44 +411,27 @@ def Run_branching(results: dict,
     ----------
     results : dict
         Dictionary that includes several parameters and values for the analysis:
-        'continue' : bool
-            Boolean describing whether the 'done' button was pressed or 
-            whether another button ('reset', 'next', 'back') was pressed
-        'coords' : np.ndarray
-            Array of all processed coordinates
-        'root_coords' : np.ndarray
-            Array describing the coordinates of the selected root node
-        'start_coords' : np.ndarray
-            Array describing the coordinates of the selected start node
-        'end_coords' : np.ndarray
-            Array describing the coordinates of the selected end node
-        'length_threshold' : float
-            Float describing the minimum length of a branch
-        'node_threshold' : float
-            Float describing the minimum number of nodes in a branch
-        'scaling' : np.ndarray
-            Array describing the scale of the plot in x,y,z directions
-        
-    branching_parameters : dict
-        Dictionary containing thresholds for determining branching.
-        'num_nearestneighbours' : int
-            Number of k-nearest neighbours to consider
-        'min_unconnected_nodes' : float
-            Minimum number of nodes for an unconnected cluster to be considered important enough to attach to the main branch
-        'max_unconnected_distance' : float
-            Maximum distance an unconnected cluster can be for consideration to be added to the main branch
+        'results_coords': array-like, coordinates to remove from the analysis.
+        'root_coords': array-like, coordinates of the root node.
+        'start_coords': array-like, coordinates of the start node.
+        'end_coords': array-like, coordinates of the end node.
+        'scaling': float, scaling factor for the coordinates.
+        'node_threshold': int, minimum number of nodes for a sequence to be considered a branch.
+        'length_threshold': float, length threshold to consider a sequence of nodes as a branch.
+    
+    filepath : str
+        The path to the .npy file containing the 3D coordinates.
         
     Returns
     -------
-    dict
-        'branches' : pd.DataFrame
-            DataFrame representing the branches in the structure. Each row represents a branch and 
-            columns provide information such as branch type (primary, secondary, etc), start and end 
-            nodes, branch length, and more.
-            
-        'nodes' : pd.DataFrame
-            DataFrame containing information about all nodes in the tree. Each row represents a node 
-            and columns provide information such as node coordinates and its parent node.
+    branches : pd.DataFrame
+        DataFrame representing the branches in the structure. Each row represents a branch and 
+        columns provide information such as branch type (primary, secondary, etc), start and end 
+        nodes, branch length, and more.
+        
+    nodes : pd.DataFrame
+        DataFrame containing information about all nodes in the tree. Each row represents a node 
+        and columns provide information such as node coordinates and its parent node.
         
     Notes
     -----
@@ -399,7 +449,7 @@ def Run_branching(results: dict,
     length_threshold = results['length_threshold']
 
     #make minimum spanning tree and nodes df
-    tree = make_tree(coords, root_coords, branching_parameters)
+    tree = make_tree(coords, root_coords)
     logging.info("Done making tree")
     nodes, end_nodes, branching_nodes = make_nodes_df(tree, root_coords, start_coords)
     logging.info("Done making nodes df")
@@ -410,9 +460,4 @@ def Run_branching(results: dict,
     branches = make_branches_df(nodes, startnode, endnode, end_nodes, length_threshold, node_threshold, scaling)
     logging.info(f"Done making branches df with {len(branches)} branches")
     
-    data2 = {
-        'continue' : True,
-        'branches' : branches,
-        'nodes' : nodes
-    }
-    return data2
+    return branches, nodes

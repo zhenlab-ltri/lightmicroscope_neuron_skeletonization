@@ -2,7 +2,7 @@
 from typing import List, Union, Tuple
 import numpy as np
 import pandas as pd
-
+import logging
 from typing import Tuple
 ArrayType = Union[np.ndarray, List[float], pd.Series]
 
@@ -42,11 +42,10 @@ def find_parent(child_id : int,
         Unique identifier of the parent node of child node
     '''
     row = nodes_df.loc[nodes_df['node_id'] == child_id]
-    try:
-        parent_id = row['parent_id'].values[0]
-    except IndexError:
-        logging.info("Probably a mistake with the root,start,end points selected. Recommend retrying") 
+    parent_id = row['parent_id'].values[0]
     return parent_id #returns parent ID
+
+    
 
 def find_children(parent_id : int, 
                   nodes_df : pd.DataFrame) -> list:
